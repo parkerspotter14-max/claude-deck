@@ -53,7 +53,8 @@ export function stepPet(pet, mood, now, rand = Math.random) {
 // ---------- desktop: animated SVG ----------
 
 export const PET_CSS =
-  '.pb{fill:#D97757}.pd{fill:#2a1c17}.ps{fill:#C4623F}' +
+  '.rw{fill:#eef1f6}.rs{fill:#b9c0cc}.rg{fill:#8d96a3}.rb{fill:#378ADD}.pd{fill:#1c1f26}' +
+  '@keyframes rock{0%,100%{transform:rotate(-3deg)}50%{transform:rotate(3deg)}}' +
   '.fb{transform-box:fill-box;transform-origin:center}.ft{transform-box:fill-box;transform-origin:top center}.fbot{transform-box:fill-box;transform-origin:bottom center}' +
   '@keyframes blink{0%,92%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}' +
   '@keyframes breathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(.965)}}' +
@@ -78,23 +79,19 @@ export function petSvgBody(state) {
   const sit = state === 'console' || state === 'read'
   const sleep = state === 'sleep'
   const legDur = run ? '.28s' : '.6s'
-  const legs = sit
-    ? '<rect x="12" y="25" width="16" height="3" rx="1.5" class="ps"/>'
-    : [11, 15.5, 21.5, 26]
-        .map((x, i) => `<rect x="${x}" y="21" width="3" height="7" rx="1.5" class="pb ft"${walk ? ` style="animation:${i % 2 ? 'legB' : 'legA'} ${legDur} ease-in-out infinite"` : ''}/>`)
-        .join('')
+  const rock = walk ? ` style="animation:rock ${legDur} ease-in-out infinite"` : ''
+  const side = (x, rev) => {
+    const leg = `<rect x="${x}" y="12" width="4" height="15" rx="2" class="rw"/><rect x="${x - 1.5}" y="25.5" width="7" height="3" rx="1.5" class="rg"/>`
+    return state === 'celebrate' ? `<g class="fbot" style="animation:wave .5s ease-in-out infinite${rev ? ' reverse' : ''}">${leg}</g>` : leg
+  }
   const eyes = sleep
-    ? '<rect x="13.5" y="13.5" width="4" height="1.4" rx=".7" class="pd"/><rect x="22.5" y="13.5" width="4" height="1.4" rx=".7" class="pd"/>'
-    : `<g${state === 'read' ? ' style="animation:look 2.4s ease-in-out infinite"' : ''}><rect x="14" y="11" width="3" height="5" rx="1.5" class="pd fb" style="animation:blink 3.6s infinite"/><rect x="23" y="11" width="3" height="5" rx="1.5" class="pd fb" style="animation:blink 3.6s infinite"/></g>`
-  const arms =
-    state === 'celebrate'
-      ? '<rect x="3" y="4" width="4" height="9" rx="2" class="pb fbot" style="animation:wave .5s ease-in-out infinite"/><rect x="33" y="4" width="4" height="9" rx="2" class="pb fbot" style="animation:wave .5s ease-in-out infinite reverse"/>'
-      : `<rect x="3" y="12" width="6" height="5" rx="2.5" class="pb"${state === 'console' ? ' style="animation:tap .25s infinite"' : ''}/><rect x="31" y="12" width="6" height="5" rx="2.5" class="pb"${state === 'console' ? ' style="animation:tap .25s infinite .12s"' : ''}/>`
+    ? '<rect x="21" y="8.4" width="4" height="1.2" rx=".6" class="pd"/>'
+    : `<g${state === 'read' ? ' style="animation:look 2.4s ease-in-out infinite"' : ''}><circle cx="23" cy="9" r="2.3" class="pd"/><circle cx="23" cy="9" r="1.3" fill="#E5484D" class="fb" style="animation:blink 3.6s infinite"/></g>`
   let props = ''
   if (state === 'console')
-    props = '<rect x="11" y="17" width="18" height="9" rx="2" fill="#4a4a48"/><rect x="13" y="18.5" width="9" height="6" rx="1" fill="#5DCAA5" style="animation:glow .4s infinite"/><circle cx="25" cy="20" r="1" fill="#E5484D"/><circle cx="26.5" cy="23" r="1" fill="#378ADD"/>'
+    props = '<rect x="27" y="19" width="13" height="8" rx="2" fill="#4a4a48"/><rect x="28.5" y="20.3" width="7" height="5" rx="1" fill="#5DCAA5" style="animation:glow .4s infinite"/><circle cx="37.5" cy="21.5" r=".9" fill="#E5484D"/><circle cx="37.5" cy="24" r=".9" fill="#378ADD"/>'
   if (state === 'read')
-    props = '<rect x="10" y="15" width="20" height="10" rx="1.5" fill="#378ADD"/><rect x="11.5" y="16" width="8" height="8" rx=".8" fill="#f2f0ea"/><rect x="20.5" y="16" width="8" height="8" rx=".8" fill="#e8e4da"/><path d="M13 18.5h5M13 20.5h5M13 22.5h4M22 18.5h5M22 20.5h5" stroke="#9a9893" stroke-width=".6"/>'
+    props = '<rect x="26" y="17" width="14" height="9" rx="1.5" fill="#378ADD"/><rect x="27" y="18" width="6" height="7" rx=".8" fill="#f2f0ea"/><rect x="33.5" y="18" width="5.5" height="7" rx=".8" fill="#e8e4da"/><path d="M28 20h4M28 22h4M28 24h3M34.5 20h3.5M34.5 22h3.5" stroke="#9a9893" stroke-width=".5"/>'
   if (sleep)
     props = '<text x="31" y="6" font-size="6" fill="#9a9893" font-family="system-ui" style="animation:zz 2s infinite">z</text><text x="34" y="3" font-size="4.5" fill="#9a9893" font-family="system-ui" style="animation:zz 2s infinite .9s">z</text>'
   if (state === 'alert')
@@ -109,11 +106,15 @@ export function petSvgBody(state) {
         ? `animation:bob ${legDur} ease-in-out infinite`
         : `animation:breathe ${sleep ? '3s' : '2.4s'} ease-in-out infinite`
   const lean = run ? ' style="transform:rotate(-7deg);transform-origin:20px 28px"' : ''
+  // R2-D2: centre foot, two side legs, white torso with blue panels, domed head with a red eye
   return (
     `<ellipse cx="20" cy="29.5" rx="${state === 'jump' ? 8 : 12}" ry="1.6" fill="#000" opacity=".35"/>` +
-    `<g${lean}><g class="fbot" style="${bodyAnim}"><g transform="translate(0 ${sit ? 3 : 0})">${legs}${arms}` +
-    '<rect x="8" y="5" width="24" height="17" rx="4" class="pb"/><rect x="8" y="18" width="24" height="4" rx="2" class="ps" opacity=".55"/>' +
-    `${eyes}</g></g></g>${props}`
+    `<g${lean}><g class="fbot" style="${bodyAnim}"><g transform="translate(0 ${sit ? 2 : 0})"><g class="fbot"${rock}>` +
+    `<rect x="17.5" y="22" width="5" height="6.5" rx="2" class="rg"/>${side(6, false)}${side(30, true)}` +
+    '<rect x="10" y="13" width="20" height="11" rx="2" class="rw"/><rect x="10" y="21" width="20" height="3" rx="1.5" class="rs" opacity=".6"/>' +
+    '<rect x="12" y="15.5" width="6" height="5" rx="1" class="rb"/><rect x="21" y="15.5" width="7" height="2.4" rx=".8" class="rb"/><circle cx="24.5" cy="20.2" r="1.2" class="rg"/>' +
+    '<path d="M10 13A10 10 0 0 1 30 13Z" class="rw"/><path d="M10.63 9.5H29.37L29.8 11H10.2Z" class="rb"/><path d="M12.86 6H27.14L28.15 7.2H11.85Z" class="rb"/>' +
+    `<circle cx="16" cy="8.5" r="1" class="rg"/>${eyes}</g></g></g></g>${props}`
   )
 }
 
@@ -143,8 +144,8 @@ export function petLaneSvg(pet, now, W, H = 62, scale = 1.05) {
 
 const COL = {
   O: [217, 119, 87], C: [196, 98, 63], D: [42, 28, 23], G: [74, 74, 72], S: [93, 202, 165], R: [229, 72, 77],
-  B: [55, 138, 221], W: [242, 240, 234], P: [232, 228, 218], Y: [224, 154, 30], Z: [154, 152, 147], K: [0, 0, 0],
-  V: [156, 149, 236], E: [226, 112, 111],
+  B: [55, 138, 221], W: [238, 241, 246], P: [232, 228, 218], Y: [224, 154, 30], Z: [154, 152, 147], K: [0, 0, 0],
+  V: [156, 149, 236], E: [226, 112, 111], L: [141, 150, 163], T: [185, 192, 204],
 }
 
 function canvas(W, H) {
@@ -206,56 +207,54 @@ export function petFrame(act, tMs, dir) {
   if (act === 'jump' || act === 'celebrate') {
     const p = ph % 1
     if (p < 0.12) squash = 1.2
-    else if (p < 0.8) dy = -12 * Math.sin(((p - 0.12) / 0.68) * Math.PI)
+    else if (p < 0.8) dy = -8 * Math.sin(((p - 0.12) / 0.68) * Math.PI)
   } else if (walk) dy = -Math.abs(sin(run ? 0.28 : 0.6)) * 1.2
   else dy = (sin(act === 'sleep' ? 3 : 2.4) * 0.5 + 0.5) * 0.6
   const lean = run ? 1.5 : 0
-  const sy = sit ? 3 : 0
+  const sy = sit ? 2 : 0
   ellipse(cv, s, 20, 29.5, act === 'jump' && dy < -4 ? 8 : 12, 1.6, 'K', 0.35)
   if (run) {
     const q = (ph % 0.5) / 0.5
     ellipse(cv, s, 6 - q * 8, 27, 2 * (0.6 + q * 0.7), 2 * (0.6 + q * 0.7), 'G', 0.7 * (1 - q))
   }
   const Y = (v) => v + dy + sy
-  if (sit) rrect(cv, s, 12, Y(25), 16, 3, 1.5, 'C')
-  else {
-    ;[11, 15.5, 21.5, 26].forEach((x, i) => {
-      const swing = walk ? sin(run ? 0.28 : 0.6, i % 2 ? 0 : (run ? 0.14 : 0.3)) * (run ? 2.2 : 1.4) : 0
-      rrect(cv, s, x + swing, Y(21) + squash, 3, 7 - squash, 1.5, 'O')
-    })
-  }
-  const tap = act === 'console' ? (sin(0.25) > 0 ? 1.5 : 0) : 0
-  if (act === 'celebrate') {
-    const w = sin(0.5) * 1.2
-    rrect(cv, s, 3 + w + lean, Y(4), 4, 9, 2, 'O')
-    rrect(cv, s, 33 - w + lean, Y(4), 4, 9, 2, 'O')
-  } else {
-    rrect(cv, s, 3 + lean, Y(12) + tap, 6, 5, 2.5, 'O')
-    rrect(cv, s, 31 + lean, Y(12) + tap, 6, 5, 2.5, 'O')
-  }
-  rrect(cv, s, 8 + lean, Y(5) + squash, 24, 17 - squash, 4, 'O')
-  rrect(cv, s, 8 + lean, Y(18), 24, 4, 2, 'C', 0.55)
+  // R2-D2: centre foot, two side legs, white torso with blue panels, domed head with a red eye
+  const up = act === 'celebrate' ? -2 - sin(0.5) * 2 : 0
+  rrect(cv, s, 17.5 + lean, Y(22), 5, 6.5, 2, 'L')
+  ;[6, 30].forEach((x) => {
+    rrect(cv, s, x + lean, Y(12) + up, 4, 15, 2, 'W')
+    rrect(cv, s, x - 1.5 + lean, Y(25.5) + up, 7, 3, 1.5, 'L')
+  })
+  rrect(cv, s, 10 + lean, Y(13), 20, 11, 2, 'W')
+  rrect(cv, s, 10 + lean, Y(21), 20, 3, 1.5, 'T', 0.6)
+  rrect(cv, s, 12 + lean, Y(15.5), 6, 5, 1, 'B')
+  rrect(cv, s, 21 + lean, Y(15.5), 7, 2.4, 0.8, 'B')
+  ellipse(cv, s, 24.5 + lean, Y(20.2), 1.2, 1.2, 'L')
+  const cx = 20 + lean
+  const cy = Y(13)
+  const dome = (u, v) => v <= cy && (u - cx) ** 2 + (v - cy) ** 2 <= 100
+  shape(cv, s, dome, cx - 10, cy - 10, cx + 10, cy, COL.W)
+  shape(cv, s, (u, v) => dome(u, v) && v >= cy - 3.5 && v <= cy - 2, cx - 10, cy - 3.5, cx + 10, cy - 2, COL.B)
+  shape(cv, s, (u, v) => dome(u, v) && v >= cy - 7 && v <= cy - 5.8, cx - 10, cy - 7, cx + 10, cy - 5.8, COL.B)
+  ellipse(cv, s, 16 + lean, Y(8.5), 1, 1, 'L')
   if (act === 'sleep') {
-    rrect(cv, s, 13.5 + lean, Y(13.5), 4, 1.4, 0.7, 'D')
-    rrect(cv, s, 22.5 + lean, Y(13.5), 4, 1.4, 0.7, 'D')
+    rrect(cv, s, 21 + lean, Y(8.4), 4, 1.2, 0.6, 'D')
   } else {
     const blinking = ph % 3.6 > 3.42
     const look = act === 'read' ? (ph % 2.4 < 1.2 ? -1 : 1.2) : 0
-    const eh = blinking ? 0.8 : 5
-    const ey = blinking ? 13 : 11
-    rrect(cv, s, 14 + lean + look, Y(ey), 3, eh, Math.min(1.5, eh / 2), 'D')
-    rrect(cv, s, 23 + lean + look, Y(ey), 3, eh, Math.min(1.5, eh / 2), 'D')
+    ellipse(cv, s, 23 + lean + look, Y(9), 2.3, 2.3, 'D')
+    ellipse(cv, s, 23 + lean + look, Y(9), 1.3, blinking ? 0.25 : 1.3, 'R')
   }
   if (act === 'console') {
-    rrect(cv, s, 11, Y(17), 18, 9, 2, 'G')
-    rrect(cv, s, 13, Y(18.5), 9, 6, 1, 'S', sin(0.4) > 0 ? 1 : 0.6)
-    ellipse(cv, s, 25, Y(20), 1, 1, 'R')
-    ellipse(cv, s, 26.5, Y(23), 1, 1, 'B')
+    rrect(cv, s, 27, Y(19), 13, 8, 2, 'G')
+    rrect(cv, s, 28.5, Y(20.3), 7, 5, 1, 'S', sin(0.4) > 0 ? 1 : 0.6)
+    ellipse(cv, s, 37.5, Y(21.5), 0.9, 0.9, 'R')
+    ellipse(cv, s, 37.5, Y(24), 0.9, 0.9, 'B')
   }
   if (act === 'read') {
-    rrect(cv, s, 10, Y(15), 20, 10, 1.5, 'B')
-    rrect(cv, s, 11.5, Y(16), 8, 8, 0.8, 'W')
-    rrect(cv, s, 20.5, Y(16), 8, 8, 0.8, 'P')
+    rrect(cv, s, 26, Y(17), 14, 9, 1.5, 'B')
+    rrect(cv, s, 27, Y(18), 6, 7, 0.8, 'W')
+    rrect(cv, s, 33.5, Y(18), 5.5, 7, 0.8, 'P')
   }
   if (act === 'sleep') {
     for (const [off, size] of [[0, 1], [0.9, 0.75]]) {
