@@ -118,6 +118,49 @@ export function petSvgBody(state) {
   )
 }
 
+// Mustafar: red sky, black ridges, a lava river with falls, embers drifting up
+function mustafarSvg(W, H) {
+  const r = (a, k) => {
+    const x = Math.sin(a * 127.1 + k * 311.7) * 43758.5453
+    return x - Math.floor(x)
+  }
+  const g = Math.max(6, Math.round(H * 0.24))
+  const gt = H - g
+  const lh = Math.max(3, Math.round(H * 0.14))
+  const lt = gt - lh
+  const ridge = (lo, amp, step, k) => {
+    let d = `M0 ${H}`
+    for (let x = 0; x <= W + step; x += step) d += `L${x} ${(H * lo + r(x / step, k) * H * amp).toFixed(1)}`
+    return d + `L${W + step} ${H}Z`
+  }
+  let falls = ''
+  if (H >= 40)
+    for (let i = 0; i < 3; i++) {
+      const x = (W * (0.1 + 0.3 * i) + r(i, 9) * 40).toFixed(1)
+      falls += `<rect x="${x}" y="${(H * 0.5).toFixed(1)}" width="2.5" height="${(lt - H * 0.5).toFixed(1)}" fill="#ff7a1a" opacity=".75" style="animation:glow ${(1.4 + i * 0.5).toFixed(1)}s infinite"/>`
+    }
+  let flecks = ''
+  for (let x = 6; x < W; x += 23)
+    if (r(x, 3) > 0.4)
+      flecks += `<rect x="${x}" y="${(lt + r(x, 4) * (lh - 1.5)).toFixed(1)}" width="${(8 + r(x, 5) * 10).toFixed(1)}" height="1.2" rx=".6" fill="#ffd34d" opacity=".55" style="animation:glow ${(1.2 + r(x, 6) * 2).toFixed(1)}s infinite -${(r(x, 7) * 3).toFixed(1)}s"/>`
+  let embers = ''
+  for (let i = 0; i < Math.max(4, Math.floor(W / 45)); i++)
+    embers += `<circle cx="${(r(i, 11) * W).toFixed(1)}" cy="${gt}" r="${(0.7 + r(i, 12) * 0.8).toFixed(1)}" fill="#ffb347" opacity="0" style="animation:emb${H} ${(3 + r(i, 13) * 3).toFixed(1)}s linear infinite -${(r(i, 14) * 6).toFixed(1)}s"/>`
+  return (
+    `<style>@keyframes emb${H}{0%{transform:translate(0,0);opacity:0}15%{opacity:.9}100%{transform:translate(8px,-${(H * 0.9).toFixed(0)}px);opacity:0}}</style>` +
+    '<defs><linearGradient id="mfs" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#12040a"/><stop offset=".55" stop-color="#5a0f0a"/><stop offset="1" stop-color="#d9480f"/></linearGradient>' +
+    '<radialGradient id="mfg"><stop offset="0" stop-color="#ff7a1a" stop-opacity=".6"/><stop offset="1" stop-color="#ff7a1a" stop-opacity="0"/></radialGradient>' +
+    '<linearGradient id="mfl" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ffb02e"/><stop offset="1" stop-color="#e8400c"/></linearGradient></defs>' +
+    `<rect width="${W}" height="${H}" fill="url(#mfs)"/>` +
+    `<ellipse cx="${(W * 0.72).toFixed(1)}" cy="${(H * 0.78).toFixed(1)}" rx="${(W * 0.35).toFixed(1)}" ry="${H}" fill="url(#mfg)"/>` +
+    `<path d="${ridge(0.3, 0.28, 18, 1)}" fill="#2a0a08"/><path d="${ridge(0.46, 0.2, 14, 2)}" fill="#170605"/>` +
+    falls +
+    `<rect y="${lt}" width="${W}" height="${lh}" fill="url(#mfl)" style="animation:glow 3s infinite"/>${flecks}` +
+    `<rect y="${gt}" width="${W}" height="${g}" fill="#0d0605"/><rect y="${gt}" width="${W}" height="1" fill="#ff6a1a" opacity=".5"/>` +
+    embers
+  )
+}
+
 // the lane: the pet walks from x0 to x1 by CSS, phased by the scene's age so a redraw does not restart it
 export function petLaneSvg(pet, now, W, H = 62, scale = 1.05) {
   const PW = 48 * scale
@@ -129,8 +172,7 @@ export function petLaneSvg(pet, now, W, H = 62, scale = 1.05) {
   const dur = Math.max(0.001, pet.dur / 1000)
   const move = `@keyframes mv${pet.id}{from{transform:translateX(${a.toFixed(1)}px)}to{transform:translateX(${b.toFixed(1)}px)}}`
   const flip = pet.dir < 0 ? `translate(${PW} 0) scale(-1 1)` : ''
-  let dots = ''
-  if (scale >= 1) for (let x = 4; x < W; x += 12) dots += `<rect x="${x}" y="${H - 4}" width="4" height="1" fill="#fff" opacity=".07"/>`
+  const dots = mustafarSvg(W, H)
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">` +
     `<style>${PET_CSS}${move}.mv{animation:mv${pet.id} ${dur.toFixed(2)}s linear both;animation-delay:-${Math.min(age, dur).toFixed(2)}s}</style>` +
