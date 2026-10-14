@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import { cacheStyle } from '../hooks/register.js'
 
 const BAND = {
   plugin: 'deck',
@@ -551,9 +552,28 @@ test('the cache row counts down from the last request and goes cold', async ($, 
   await start($)
   await $.session.measure({ context: { tokens: 1, window: 10, percent: 10 }, rateLimits: [], changed: ['context'] })
   const out = await $.command.run({ command: 'deck', args: 'status' })
-  expect(out.text).toMatch(/Cache — prompt cache · 5m \(5:00\)/)
-  const hr = await $.command.run({ command: 'deck', args: 'cache 1h' })
-  expect(hr.text).toMatch(/1h/)
+  expect(out.text).toMatch(/Cache — prompt cache · 1h.*\(1:00:00\)/)
+  const hr = await $.command.run({ command: 'deck', args: 'cache 5m' })
+  expect(hr.text).toMatch(/5m/)
   const out2 = await $.command.run({ command: 'deck', args: 'status' })
-  expect(out2.text).toMatch(/Cache — prompt cache · 1h \(1:00:00\)/)
+  expect(out2.text).toMatch(/Cache — prompt cache · 5m.*\(5:00\)/)
+})
+
+test('/deck collapsed slim keeps only limits, context and cache', async ($, on) => {
+  const { saved } = stubs(on)
+  await start($)
+  await $.tool.call({ tool: 'TodoWrite', todos: TODOS })
+  await $.command.run({ command: 'deck', args: 'collapsed slim' })
+  expect((saved.get('prefs') as any).collapsed).toBe('slim')
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await ui.find({ type: 'Text', text: /^5h 31% ↻/ })).toBeDefined()
+})
+
+test('the cache colours: green, amber at 10 minutes, red at 2 (scaled for a 5 minute cache)', () => {
+  expect(cacheStyle(40 * 60, 3600)).toBe('ok')
+  expect(cacheStyle(9 * 60, 3600)).toBe('warn')
+  expect(cacheStyle(110, 3600)).toBe('hot')
+  expect(cacheStyle(200, 300)).toBe('ok')
+  expect(cacheStyle(100, 300)).toBe('warn')
+  expect(cacheStyle(50, 300)).toBe('hot')
 })

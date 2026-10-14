@@ -21,7 +21,8 @@ const DEFAULT_PREFS = {
   quiet: true,
   size: 'compact', // 'compact' (tight rows, short pet lane) or 'roomy' (the 0.4 spacing)
   collapsed: 'chips', // 'chips' (mini bars), 'text' (one plain status line) or 'rings' (limit rings and cost)
-  cacheTtl: '5m', // how long the prompt cache lives after a request: '5m' or '1h'
+  cacheTtl: '1h', // how long the prompt cache lives after a request: '1h' (default) or '5m'
+  cacheTtlUser: false, // true once /deck cache has been used, so an old saved value never wins
   cost: false, // track spend today and this month (pay-per-use API keys)
   city: null, // { name, lat, lon }
 }
@@ -35,7 +36,7 @@ const FOLD_MS = 5000
 const MAX_STRIPS = 4
 const ASK_DELAY_MS = 600
 const TRACK_H = 22
-const VERSION = '0.4.12' // keep in step with .claude-plugin/plugin.json (a test checks)
+const VERSION = '0.4.13' // keep in step with .claude-plugin/plugin.json (a test checks)
 const RIGHT_W = 92
 const TITLE_MAX_CH = 22 // a long prompt as a bar title would squeeze every track
 const TITLE_MAX_PX = 160
@@ -45,6 +46,11 @@ const SLEEPY_MS = 180_000
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 const TIER_MODEL = { fast: 'haiku', balanced: 'sonnet', deep: 'opus' }
 const MODEL_RANK = { haiku: 0, sonnet: 1, opus: 2 }
+
+const cacheTtlMs = () => (prefs.cacheTtl === '5m' ? 300_000 : 3600_000)
+// red under 2 minutes, amber under 10 (on a 5 minute cache: the last fifth and the last half)
+export const cacheStyle = (secs, ttlSecs) => (secs <= Math.min(120, ttlSecs * 0.2) ? 'hot' : secs <= Math.min(600, ttlSecs * 0.5) ? 'warn' : 'ok')
+const COMPACT_BUFFER = 33_000 // tokens Claude Code keeps free before it auto-compacts (an estimate)
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
 let prefs = clone(DEFAULT_PREFS)
@@ -707,15 +713,16 @@ function collectRows(now) {
   const ctx = usage.context
   if (prefs.show.context && ctx && ctx.percent != null) {
     const p = ctx.percent
+    const compactF = ctx.window > COMPACT_BUFFER * 2 ? (ctx.window - COMPACT_BUFFER) / ctx.window : 0.8
     rows.push({
       id: 'context',
       kind: 'meter',
-      style: p >= 80 ? 'hot' : p >= 60 ? 'warn' : 'run',
+      style: p >= compactF * 100 - 5 ? 'hot' : p >= 60 ? 'warn' : 'run',
       title: 'Context',
       pct: p,
-      marks: [{ f: 0.5 }, { f: 0.8 }],
+      marks: [{ f: 0.5 }, { f: compactF }],
       name: fmtK(ctx.tokens) + ' / ' + fmtK(ctx.window),
-      count: '',
+      count: 'compacts ~' + fmtK(Math.round(ctx.window * compactF)),
       right: Math.round(p) + '%',
       short: 'ctx ' + Math.round(p) + '%',
       section: 'context',
@@ -748,7 +755,8 @@ function collectRows(now) {
     }
   }
   if (prefs.show.cache && cacheAt) {
-    const ttl = prefs.cacheTtl === '1h' ? 3600_000 : 300_000
+    const ttl = cacheTtlMs()
+    const tok = usage.context?.tokens
     const left = ttl - (now - cacheAt)
     const live = turnActive
     const cold = !live && left <= 0
@@ -758,11 +766,11 @@ function collectRows(now) {
     rows.push({
       id: 'cache',
       kind: 'meter',
-      style: live ? 'run' : cold ? 'warn' : secs <= 20 ? 'hot' : secs <= 60 ? 'warn' : 'ok',
+      style: live ? 'run' : cold ? 'warn' : cacheStyle(secs, ttl / 1000),
       title: 'Cache',
       pct: live ? 100 : Math.max(0, Math.min(100, (left / ttl) * 100)),
       marks: [{ f: 0.5 }],
-      name: cold ? 'prompt cache · cold, the next prompt re-reads it all' : 'prompt cache · ' + prefs.cacheTtl,
+      name: cold ? 'cold · next prompt re-reads' + (tok ? ' ~' + fmtK(tok) : ' it all') : 'prompt cache · ' + prefs.cacheTtl + (tok ? ' · ~' + fmtK(tok) + ' cached' : ''),
       count: '',
       right,
       short: 'cache ' + right,
@@ -784,6 +792,7 @@ function petMood(rows, now) {
   if (rows.some((r) => r.state === 'needs_input')) return 'alert'
   if (now < celebrateUntil) return 'celebrate'
   if (turnActive) return 'working'
+  if (prefs.show.cache && cacheAt && now - cacheAt > cacheTtlMs()) return 'sleepy'
   if (now - lastActivity > SLEEPY_MS) return 'sleepy'
   return 'calm'
 }
@@ -1164,8 +1173,8 @@ const HELP = [
   '/deck panel [off]          open Deck in a panel (terminal and Desktop; the VS Code extension draws none yet)',
   '/deck version              show which Deck version is running',
   '/deck size compact|roomy   compact (default) packs the rows tighter on Desktop',
-  '/deck collapsed chips|text|rings  collapsed look: chips with mini bars, one plain line, or limit rings',
-  '/deck cache 5m|1h         how long the prompt cache lives (the Cache row counts down from the last request)',
+  '/deck collapsed chips|text|rings|slim  collapsed look: chips with mini bars, one plain line, limit rings, or a slim limits-context-cache line',
+  '/deck cache 1h|5m         how long the prompt cache lives, default 1h (the Cache row counts down from the last request)',
   '/deck cost on|off         track spend today and this month (pay-per-use API keys)',
   '/deck auto on|off          expand when something needs you',
   '/deck sound on|off',
@@ -1297,9 +1306,11 @@ async function deckView($, e, next) {
   }
 
   // ----- collapsed, text: one plain status line, clock and weather at its end -----
-  if ((!open || !rows.length) && prefs.collapsed === 'text') {
+  if ((!open || !rows.length) && (prefs.collapsed === 'text' || prefs.collapsed === 'slim')) {
+    const slim = prefs.collapsed === 'slim' // limits, context and cache only, no pet, clock or weather
     const parts = []
     for (const row of collapsedOrder(rows)) {
+      if (slim && !(row.limit || row.id === 'context' || row.id === 'cache' || row.state === 'needs_input')) continue
       const st = STYLE[row.style]
       if (parts.length) parts.push(Text({ children: ['  '] }))
       if (row.kind === 'route') {
@@ -1310,13 +1321,13 @@ async function deckView($, e, next) {
       parts.push(Text({ color: desktop ? st.desk : st.fill, children: [st.glyph + ' '] }))
       parts.push(Text({ color: row.state === 'needs_input' ? st.fill : MUTED, children: [row.short] }))
     }
-    if (extras.length) parts.push(Text({ color: MUTED, children: [(parts.length ? '  ' : '') + [...extras].reverse().join('  ')] }))
+    if (extras.length && !slim) parts.push(Text({ color: MUTED, children: [(parts.length ? '  ' : '') + [...extras].reverse().join('  ')] }))
     const line = Box({
       flexDirection: 'row',
       columnGap: 1,
       children: [...(rows.length ? [toggle] : []), Box({ flexDirection: 'row', flexShrink: 1, children: [Text({ wrap: 'truncate', children: parts })] })],
     })
-    return Box({ flexDirection: 'column', children: [...lane, line] })
+    return Box({ flexDirection: 'column', children: [...(slim ? [] : lane), line] })
   }
 
   // ----- collapsed, chips: one line of chips, limits first -----
@@ -1505,6 +1516,7 @@ export function register(on) {
         style: { ...DEFAULT_PREFS.style, ...(saved.style ?? {}) },
       }
       delete prefs.stages
+      if (!saved.cacheTtlUser) prefs.cacheTtl = DEFAULT_PREFS.cacheTtl
     }
     await refreshUsage($)
     await readSessionModel($)
@@ -1647,10 +1659,10 @@ export function register(on) {
     else if (a === 'size' && (b === 'compact' || b === 'roomy')) {
       prefs.size = b
       reply = b === 'compact' ? 'Deck is compact: tighter rows and a shorter pet lane.' : 'Deck is roomy: the original spacing.'
-    } else if (a === 'collapsed' && (b === 'chips' || b === 'text' || b === 'rings')) {
+    } else if (a === 'collapsed' && (b === 'chips' || b === 'text' || b === 'rings' || b === 'slim')) {
       prefs.collapsed = b
       prefs.open = false
-      reply = { chips: 'Collapsed Deck now shows chips with mini bars.', text: 'Collapsed Deck is now one plain status line.', rings: 'Collapsed Deck now shows limit rings' + (prefs.cost ? ' and spend.' : '. Add spend with /deck cost on.') }[b]
+      reply = { chips: 'Collapsed Deck now shows chips with mini bars.', text: 'Collapsed Deck is now one plain status line.', slim: 'Collapsed Deck is now one slim line: limits, context and cache.', rings: 'Collapsed Deck now shows limit rings' + (prefs.cost ? ' and spend.' : '. Add spend with /deck cost on.') }[b]
     } else if (a === 'cost' && (b === 'on' || b === 'off')) {
       prefs.cost = b === 'on'
       if (prefs.cost) await refreshUsage($)
@@ -1662,6 +1674,7 @@ export function register(on) {
     } else if (a === 'all' && (b === 'on' || b === 'off')) for (const s of SECTIONS) prefs.show[s] = b === 'on'
     else if (a === 'cache' && (b === '5m' || b === '1h')) {
       prefs.cacheTtl = b
+      prefs.cacheTtlUser = true
       prefs.show.cache = true
       reply = 'Cache timer counts down ' + b + ' from the last request.'
     } else if (SECTIONS.includes(a) && (b === 'on' || b === 'off')) prefs.show[a] = b === 'on'

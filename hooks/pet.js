@@ -22,7 +22,7 @@ function pick(list, r) {
 
 // mood: 'alert' | 'celebrate' | 'working' | 'sleepy' | 'calm'
 export function stepPet(pet, mood, now, rand = Math.random) {
-  const moodChanged = mood !== pet.mood && (mood === 'alert' || mood === 'celebrate' || pet.mood === 'alert')
+  const moodChanged = mood !== pet.mood && (mood === 'alert' || mood === 'celebrate' || pet.mood === 'alert' || pet.mood === 'sleepy')
   if (!moodChanged && now < pet.start + pet.dur) return false
   const x = petX(pet, now)
   pet.mood = mood
