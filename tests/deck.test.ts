@@ -545,3 +545,15 @@ test('/deck demo fills in a sample route and limits in a fresh session, and real
   expect(out.text).not.toMatch(/Session · 5h/)
   expect(out.text).toMatch(/7d · 50% used/)
 })
+
+test('the cache row counts down from the last request and goes cold', async ($, on) => {
+  stubs(on)
+  await start($)
+  await $.session.measure({ context: { tokens: 1, window: 10, percent: 10 }, rateLimits: [], changed: ['context'] })
+  const out = await $.command.run({ command: 'deck', args: 'status' })
+  expect(out.text).toMatch(/Cache — prompt cache · 5m \(4:5\d\)/)
+  const hr = await $.command.run({ command: 'deck', args: 'cache 1h' })
+  expect(hr.text).toMatch(/1h/)
+  const out2 = await $.command.run({ command: 'deck', args: 'status' })
+  expect(out2.text).toMatch(/Cache — prompt cache · 1h \(59:5\d\)/)
+})

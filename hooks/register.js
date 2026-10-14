@@ -10,10 +10,10 @@ import { TERMINAL_STYLES, TERMINAL_STYLE_NAMES, terminalBar, terminalMini } from
 import { DESKTOP_STYLES, DESKTOP_STYLE_NAMES, desktopTrack, stripsSvg, stripsHeight } from './styles-desktop.js'
 import { createPet, stepPet, petX, petLaneSvg, petFrame, PET_RASTER } from './pet.js'
 
-const SECTIONS = ['plans', 'agents', 'context', 'limits', 'route', 'pet', 'clock', 'weather']
+const SECTIONS = ['plans', 'agents', 'context', 'limits', 'cache', 'route', 'pet', 'clock', 'weather']
 
 const DEFAULT_PREFS = {
-  show: { plans: true, agents: true, context: true, limits: true, route: true, pet: true, clock: true, weather: false },
+  show: { plans: true, agents: true, context: true, limits: true, cache: true, route: true, pet: true, clock: true, weather: false },
   style: { terminal: 'solid', desktop: 'pixel' },
   open: false,
   auto: true,
@@ -21,6 +21,7 @@ const DEFAULT_PREFS = {
   quiet: true,
   size: 'compact', // 'compact' (tight rows, short pet lane) or 'roomy' (the 0.4 spacing)
   collapsed: 'chips', // 'chips' (mini bars), 'text' (one plain status line) or 'rings' (limit rings and cost)
+  cacheTtl: '5m', // how long the prompt cache lives after a request: '5m' or '1h'
   cost: false, // track spend today and this month (pay-per-use API keys)
   city: null, // { name, lat, lon }
 }
@@ -34,7 +35,7 @@ const FOLD_MS = 5000
 const MAX_STRIPS = 4
 const ASK_DELAY_MS = 600
 const TRACK_H = 22
-const VERSION = '0.4.9' // keep in step with .claude-plugin/plugin.json (a test checks)
+const VERSION = '0.4.12' // keep in step with .claude-plugin/plugin.json (a test checks)
 const RIGHT_W = 92
 const TITLE_MAX_CH = 22 // a long prompt as a bar title would squeeze every track
 const TITLE_MAX_PX = 160
@@ -54,6 +55,7 @@ let usage = { context: null, rateLimits: [] }
 let sawTerminal = false
 let demoTimer = null
 let lastSecond = 0
+let cacheAt = 0 // when the main loop last talked to the model; the prompt cache is warm from then
 
 // id -> { id, title, source, stages:[{name, steps:[{title, active, status}]}], explicit, startedAt, doneAt, agentsDoneAt, dismissed }
 const bars = new Map()
@@ -745,6 +747,30 @@ function collectRows(now) {
       })
     }
   }
+  if (prefs.show.cache && cacheAt) {
+    const ttl = prefs.cacheTtl === '1h' ? 3600_000 : 300_000
+    const left = ttl - (now - cacheAt)
+    const live = turnActive
+    const cold = !live && left <= 0
+    const secs = Math.max(0, Math.ceil(left / 1000))
+    const clock = secs >= 3600 ? Math.floor(secs / 3600) + ':' + String(Math.floor((secs % 3600) / 60)).padStart(2, '0') + ':' + String(secs % 60).padStart(2, '0') : Math.floor(secs / 60) + ':' + String(secs % 60).padStart(2, '0')
+    const right = live ? 'live' : cold ? 'cold' : clock
+    rows.push({
+      id: 'cache',
+      kind: 'meter',
+      style: live ? 'run' : cold ? 'warn' : secs <= 20 ? 'hot' : secs <= 60 ? 'warn' : 'ok',
+      title: 'Cache',
+      pct: live ? 100 : Math.max(0, Math.min(100, (left / ttl) * 100)),
+      marks: [{ f: 0.5 }],
+      name: cold ? 'prompt cache · cold, the next prompt re-reads it all' : 'prompt cache · ' + prefs.cacheTtl,
+      count: '',
+      right,
+      short: 'cache ' + right,
+      section: 'cache',
+      hist: [],
+      rate: '',
+    })
+  }
   return rows
 }
 
@@ -1139,6 +1165,7 @@ const HELP = [
   '/deck version              show which Deck version is running',
   '/deck size compact|roomy   compact (default) packs the rows tighter on Desktop',
   '/deck collapsed chips|text|rings  collapsed look: chips with mini bars, one plain line, or limit rings',
+  '/deck cache 5m|1h         how long the prompt cache lives (the Cache row counts down from the last request)',
   '/deck cost on|off         track spend today and this month (pay-per-use API keys)',
   '/deck auto on|off          expand when something needs you',
   '/deck sound on|off',
@@ -1633,7 +1660,11 @@ export function register(on) {
       prefs.sound = b === 'on'
       if (prefs.sound) play($, 'chime')
     } else if (a === 'all' && (b === 'on' || b === 'off')) for (const s of SECTIONS) prefs.show[s] = b === 'on'
-    else if (SECTIONS.includes(a) && (b === 'on' || b === 'off')) prefs.show[a] = b === 'on'
+    else if (a === 'cache' && (b === '5m' || b === '1h')) {
+      prefs.cacheTtl = b
+      prefs.show.cache = true
+      reply = 'Cache timer counts down ' + b + ' from the last request.'
+    } else if (SECTIONS.includes(a) && (b === 'on' || b === 'off')) prefs.show[a] = b === 'on'
     else if (a === 'city' && b) {
       const q = [b, ...rest].join(' ')
       try {
@@ -1679,6 +1710,7 @@ export function register(on) {
 
   // what the main loop's first request runs with, whoever set it
   on('turn.step', async function* ($, e, next) {
+    if (!e.agentId) cacheAt = Date.now()
     if (!e.agentId && e.index === 0) seen = { model: e.model, effort: typeof e.effort === 'string' ? e.effort : '' }
     return yield* next(e)
   })
@@ -1704,6 +1736,7 @@ export function register(on) {
   on('session.measure', async ($, e, next) => {
     dropDemoUsage()
     usage = { context: e.context ?? usage.context, rateLimits: mergeLimits(usage.rateLimits, e.rateLimits) }
+    cacheAt = Date.now()
     if (e.cost) await addSpend($, e.cost.usd)
     await noteUsage($)
     $.ui.invalidate('ui.render')
@@ -1778,6 +1811,7 @@ export function register(on) {
       }
       turnActive = false
       lastActivity = Date.now()
+      cacheAt = lastActivity
     }
     return next(e)
   })
